@@ -7,6 +7,7 @@ import {
   UserLeftEvent,
   SpaceState,
 } from '@/hooks/useSpaceWebSocket';
+import { API_BASE_URL } from '@/lib/api';
 
 export class GameScene extends Phaser.Scene {
   private mainPlayer: Player | null = null;
@@ -72,7 +73,7 @@ export class GameScene extends Phaser.Scene {
 
     if (isCustomMap || this.mapId.startsWith('dynamic-')) {
       // --- CUSTOM / DYNAMIC LOADING ---
-      const mapJsonPath = `/maps/custom/${this.mapId}.json`;
+      const mapJsonPath = `${API_BASE_URL}/maps/custom/${this.mapId}.json`;
       // In case we don't have a static file for this dynamic id, we might need an API call.
       // Assuming for now the backend provides the map json via this path.
       console.log(`Loading custom map JSON: ${mapJsonPath}`);
@@ -91,7 +92,9 @@ export class GameScene extends Phaser.Scene {
           data.tilesets.forEach((tileset: any) => {
             if (tileset.image && tileset.name) {
               console.log(`Dynamic loading tileset: ${tileset.name} -> ${tileset.image}`);
-              this.load.image(tileset.name, tileset.image);
+              // Ensure absolute URL if it's a relative path from backend
+              const imageUrl = tileset.image.startsWith('http') ? tileset.image : `${API_BASE_URL}${tileset.image}`;
+              this.load.image(tileset.name, imageUrl);
             }
           });
         }
