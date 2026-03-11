@@ -41,7 +41,7 @@ const defaultMaps = [
     id: "dynamic-office",
     title: "Generate Custom Office",
     description: "Tell us your team size and we will perfectly scale the office specifically for you.",
-    image: "/images/space-3.png", 
+    image: "/images/space-1.png", 
     useCase: "remote-office",
   }
 ];
