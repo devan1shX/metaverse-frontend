@@ -3,6 +3,7 @@
 import { useState, useRef, ReactNode } from "react";
 import { Upload, X, Image as ImageIcon, Loader2 } from "lucide-react";
 import { TilesetConfig } from "@/types/MapEditor.types";
+import { API_BASE_URL } from "@/lib/api";
 
 interface TilesetUploaderProps {
   mapName: string;
@@ -99,7 +100,7 @@ export default function TilesetUploader({ mapName, onUpload, onClose }: TilesetU
       formData.append('mapName', mapName);
       formData.append('file', file);
 
-      const response = await fetch('http://localhost:3000/metaverse/maps/upload', {
+      const response = await fetch(`${API_BASE_URL}/metaverse/maps/upload`, {
         method: 'POST',
         body: formData,
       });
