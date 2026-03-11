@@ -1,0 +1,1063 @@
+import * as Phaser from 'phaser';
+import { Player, PlayerData } from '@/components/Player';
+import { gameEventEmitter } from '@/lib/GameEventEmitter';
+import {
+  PositionUpdate,
+  UserJoinedEvent,
+  UserLeftEvent,
+  SpaceState,
+} from '@/hooks/useSpaceWebSocket';
+
+export class GameScene extends Phaser.Scene {
+  private mainPlayer: Player | null = null;
+  private otherPlayers: Map<string, Player> = new Map();
+  private otherPlayersGroup!: Phaser.Physics.Arcade.Group;
+  private cursors: Phaser.Types.Input.Keyboard.CursorKeys | null = null;
+  private wasd: any;
+  private mainPlayerId: string | null = null;
+  private mainPlayerAvatarKey: string = 'avatar-default';
+  private mainPlayerAvatarUrl: string | undefined;
+  private mapId: string = 'office-01';
+  private chairs: Phaser.Physics.Arcade.StaticGroup | null = null;
+  private currentOverlappingChair: any = null;
+  private playerVideos: Map<string, Phaser.GameObjects.DOMElement> = new Map();
+  private screenVideos: Map<string, Phaser.GameObjects.DOMElement> = new Map();
+  private isInputDisabled: boolean = false;
+
+  // Interactive Zones mapping
+  private interactiveZones: { type: 'CodeEditor' | 'WhiteBoard'; x: number; y: number }[] = [];
+  private nearestZone: { type: 'CodeEditor' | 'WhiteBoard'; x: number; y: number } | null = null;
+  private lastNearestZoneType: 'CodeEditor' | 'WhiteBoard' | null = null;
+
+  constructor() {
+    super({ key: 'GameScene' });
+  }
+
+  init(data: { userId: string; avatarUrl?: string; mapId?: string }) {
+    this.mainPlayerId = data.userId;
+    this.mapId = data.mapId || 'office-01';
+
+    this.mainPlayerAvatarUrl = data.avatarUrl;
+    const baseAvatarUrl = data.avatarUrl || '/avatars/avatar-2.png';
+    let spritesheetUrl = '/sprites/avatar-2-spritesheet.png';
+    let avatarType = 'avatar-2';
+
+    if (baseAvatarUrl.includes('custom')) {
+      spritesheetUrl = baseAvatarUrl;
+      avatarType = 'custom';
+    } else if (baseAvatarUrl.includes('avatar-1')) {
+      spritesheetUrl = '/sprites/avatar-1-spritesheet.png';
+      avatarType = 'avatar-1';
+    } else if (baseAvatarUrl.includes('avatar-2')) {
+      spritesheetUrl = '/sprites/avatar-2-spritesheet.png';
+      avatarType = 'avatar-2';
+    } else if (baseAvatarUrl.includes('avatar-3')) {
+      spritesheetUrl = '/sprites/avatar-3-spritesheet.png';
+      avatarType = 'avatar-3';
+    } else if (baseAvatarUrl.includes('avatar-4')) {
+      spritesheetUrl = '/sprites/avatar-4-spritesheet.png';
+      avatarType = 'avatar-4';
+    } else if (baseAvatarUrl.includes('avatar-5')) {
+      spritesheetUrl = '/sprites/avatar-5-spritesheet.png';
+      avatarType = 'avatar-5';
+    }
+
+    this.mainPlayerAvatarKey = `avatar-key-${data.userId}-${avatarType}`;
+    this.mainPlayerAvatarUrl = spritesheetUrl;
+  }
+
+  preload() {
+    // Check if this is a custom map
+    const isCustomMap = this.mapId.startsWith('custom-');
+
+    if (isCustomMap || this.mapId.startsWith('dynamic-')) {
+      // --- CUSTOM / DYNAMIC LOADING ---
+      const mapJsonPath = `/maps/custom/${this.mapId}.json`;
+      // In case we don't have a static file for this dynamic id, we might need an API call.
+      // Assuming for now the backend provides the map json via this path.
+      console.log(`Loading custom map JSON: ${mapJsonPath}`);
+
+      this.load.json('mapData', mapJsonPath);
+
+      // Always load the Green background for custom maps
+      this.load.image("Green", "/maps/map1/assets/Green.png");
+
+      this.load.on('filecomplete-json-mapData', (key: string, type: string, data: any) => {
+        console.log("Map JSON loaded successfully. Loading tilesets...", data);
+
+        this.load.tilemapTiledJSON('map', data);
+
+        if (data.tilesets && Array.isArray(data.tilesets)) {
+          data.tilesets.forEach((tileset: any) => {
+            if (tileset.image && tileset.name) {
+              console.log(`Dynamic loading tileset: ${tileset.name} -> ${tileset.image}`);
+              this.load.image(tileset.name, tileset.image);
+            }
+          });
+        }
+      });
+
+    } else {
+      // --- LEGACY HARDCODED LOADING (RESTORED) ---
+      // Restore original functionality for office-01 and office-02
+      if (this.mapId === 'office-01') {
+        console.log("Loading legacy map: office-01");
+        this.load.image("Little_Bits_Office_Floors", "/maps/map1/assets/Little_Bits_Office_Floors.png");
+        this.load.image("Little_Bits_office_objects", "/maps/map1/assets/Little_Bits_office_objects.png");
+        this.load.image("Little_Bits_office_walls", "/maps/map1/assets/Little_Bits_office_walls.png");
+        this.load.image("floor_tiles", "/maps/map1/assets/floor_tiles.png");
+        this.load.image("Green", "/maps/map1/assets/Green.png");
+        this.load.image("worker1", "/maps/map1/assets/worker1.png");
+        this.load.image("Chair", "/maps/map1/assets/Chair.png");
+        this.load.image("desk-with-pc", "/maps/map1/assets/desk-with-pc.png");
+        this.load.image("office-partitions-1", "/maps/map1/assets/office-partitions-1.png");
+        this.load.image("office-partitions-2", "/maps/map1/assets/office-partitions-2.png");
+        this.load.image("plant", "/maps/map1/assets/plant.png");
+        this.load.image("Trash", "/maps/map1/assets/Trash.png");
+        this.load.image("interiors_demo", "/maps/map1/assets/interiors_demo.png");
+        this.load.image("boss", "/maps/map1/assets/boss.png");
+        this.load.image("Julia_Drinking_Coffee", "/maps/map1/assets/Julia_Drinking_Coffee.png");
+        this.load.image("cabinet", "/maps/map1/assets/cabinet.png");
+        this.load.image("furniture pack coloured outline", "/maps/map1/assets/furniture pack coloured outline.png");
+        this.load.image("coffee-maker", "/maps/map1/assets/coffee-maker.png");
+        this.load.image("sink", "/maps/map1/assets/sink.png");
+        this.load.image("water-cooler", "/maps/map1/assets/water-cooler.png");
+        this.load.image("Run (32x32)", "/maps/map1/assets/Run (32x32).png");
+        this.load.image("Idle (32x32)", "/maps/map1/assets/Idle (32x32).png");
+        this.load.tilemapTiledJSON("map", "/maps/map1/office-01.json");
+
+      } else if (this.mapId === 'interview-room') {
+        console.log("Loading map: interview-room (map3)");
+        this.load.image("m3_VictorianWallConsolidationGreytop", "/maps/map3/assets/VictorianWallConsolidationGreytop.png");
+        this.load.image("m3_Little_Bits_Office_Floors", "/maps/map3/assets/Little_Bits_Office_Floors.png");
+        this.load.image("m3_table_fancy_3x3_mediumwood", "/maps/map3/assets/table_fancy_3x3_mediumwood.png");
+        this.load.image("m3_EamesChair", "/maps/map3/assets/EamesChair.png");
+        this.load.image("m3_Chair_set", "/maps/map3/assets/Chair_set.png");
+        this.load.image("m3_chair_neonoir", "/maps/map3/assets/chair_neonoir.png");
+        this.load.image("m3_laptop", "/maps/map3/assets/laptop.png");
+        this.load.image("m3_papers", "/maps/map3/assets/papers.png");
+        this.load.image("m3_water_bottle", "/maps/map3/assets/water_bottle.png");
+        this.load.image("m3_solo_cup", "/maps/map3/assets/solo cup.png");
+        this.load.image("m3_office_filecabinets", "/maps/map3/assets/office_filecabinets.png");
+        this.load.image("m3_cat-tail_willow_red", "/maps/map3/assets/cat-tail_willow_red.png");
+        this.load.image("m3_table_coffee", "/maps/map3/assets/table_coffee.png");
+        this.load.image("m3_books_stack", "/maps/map3/assets/books stack [1x2].png");
+        this.load.image("m3_book", "/maps/map3/assets/book [1x1].png");
+        this.load.image("m3_document_sepia", "/maps/map3/assets/document sepia [1x1].png");
+        this.load.image("m3_succulent_blue", "/maps/map3/assets/succulent_blue [1x1].png");
+        this.load.image("m3_water_cooler", "/maps/map3/assets/water_cooler.png");
+        this.load.image("m3_trashcan_w_lid", "/maps/map3/assets/trashcan_w_lid.png");
+        this.load.image("m3_wallclock_white", "/maps/map3/assets/wallclock_white.png");
+        this.load.image("m3_globe_blue_0", "/maps/map3/assets/globe_blue_0.png");
+        this.load.image("m3_poster_7", "/maps/map3/assets/poster_7 [3x2].png");
+        this.load.image("m3_dresser_wood_left", "/maps/map3/assets/dresser_wood_left [1x2].png");
+        this.load.image("m3_plant_spiky", "/maps/map3/assets/plant_spiky [1x2].png");
+        this.load.image("m3_file_pdf", "/maps/map3/assets/file pdf [1x1].png");
+        this.load.image("m3_quill", "/maps/map3/assets/quill.png");
+        this.load.image("m3_shelf_ikea_v2", "/maps/map3/assets/shelf_ikea_v2.png");
+        this.load.image("m3_cabinet_corner_darkwood_left", "/maps/map3/assets/cabinet_corner_darkwood_left.png");
+        this.load.image("m3_whiteboard", "/maps/map3/assets/whiteboard.png");
+        this.load.image("m3_dresser_2x2_black_right", "/maps/map3/assets/dresser_2x2_black_right.png");
+        this.load.image("m3_cyberpunk", "/maps/map3/assets/cyberpunk.png");
+        this.load.image("m3_welcome_mat", "/maps/map3/assets/welcome mat [4ishx2].png");
+        this.load.image("m3_Rugs", "/maps/map3/assets/Rugs[5x5].png");
+        this.load.image("m3_banner_ox", "/maps/map3/assets/banner_ox [1x2].png");
+        // Also load Green for background (same grass tile as map1/map2)
+        this.load.image("Green", "/maps/map1/assets/Green.png");
+        this.load.tilemapTiledJSON("interview-room", "/maps/map3/interview-room.json");
+
+      } else {
+        console.log("Loading legacy map: office-02 (or default)");
+        this.load.image("cabinet", "/maps/map2/assets/cabinet.png");
+        this.load.image("Chair", "/maps/map2/assets/Chair.png");
+        this.load.image("coffee-maker", "/maps/map2/assets/coffee-maker.png");
+        this.load.image("Desktop", "/maps/map2/assets/Desktop.png");
+        this.load.image("Floor Tiles", "/maps/map2/assets/Floor Tiles.png");
+        this.load.image("Green", "/maps/map2/assets/Green.png");
+        this.load.image("interiors_demo", "/maps/map2/assets/interiors_demo.png");
+        this.load.image("Little_Bits_Office_Floors", "/maps/map2/assets/Little_Bits_Office_Floors.png");
+        this.load.image("Little_Bits_office_objects", "/maps/map2/assets/Little_Bits_office_objects.png");
+        this.load.image("Little_Bits_office_walls", "/maps/map2/assets/Little_Bits_office_walls.png");
+        this.load.image("office-partitions-1", "/maps/map2/assets/office-partitions-1.png");
+        this.load.image("office-partitions-2", "/maps/map2/assets/office-partitions-2.png");
+        this.load.image("plant", "/maps/map2/assets/plant.png");
+        this.load.image("sink", "/maps/map2/assets/sink.png");
+        this.load.image("stamping-table", "/maps/map2/assets/stamping-table.png");
+        this.load.image("Trash", "/maps/map2/assets/Trash.png"); // Note: Key mismatch fixed in user code to 'Trash_map2' but sticking to standard key logic if possible or use 'Trash' if collisions align
+        this.load.image("water-cooler", "/maps/map2/assets/water-cooler.png");
+        this.load.image("worker1", "/maps/map2/assets/worker1.png");
+        this.load.image("Yellow", "/maps/map2/assets/Yellow.png");
+        this.load.tilemapTiledJSON("map", "/maps/map2/office-02.json");
+      }
+    }
+
+    // Handle Load Errors
+    this.load.on('loaderror', (file: any) => {
+      console.error(`Error loading file: ${file.key} (${file.url})`);
+    });
+
+    // Load avatar spritesheets
+    this.load.spritesheet('avatar-default', '/sprites/avatar-2-spritesheet.png', {
+      frameWidth: 48,
+      frameHeight: 48,
+    });
+
+    // Custom Layered Avatars
+    this.load.spritesheet('metro-base', '/avatars/MetroCity/CharacterModel/Character Model.png', { frameWidth: 32, frameHeight: 32 });
+    this.load.spritesheet('metro-hair', '/avatars/MetroCity/Hair/Hairs.png', { frameWidth: 32, frameHeight: 32 });
+    for (let i = 1; i <= 6; i++) {
+        this.load.spritesheet(`metro-outfit-${i}`, `/avatars/MetroCity/Outfits/Outfit${i}.png`, { frameWidth: 32, frameHeight: 32 });
+    }
+
+    if (this.mainPlayerAvatarKey !== 'avatar-default' && this.mainPlayerAvatarUrl) {
+      if (!this.textures.exists(this.mainPlayerAvatarKey)) {
+        let frameWidth = 48;
+        let frameHeight = 48;
+
+        if (this.mainPlayerAvatarUrl.includes('custom')) {
+            // It's a custom avatar URL, we don't load a monolithic spritesheet here 
+            // because the individual layers are preloaded above.
+            return;
+        }
+
+        if (this.mainPlayerAvatarUrl.includes('avatar-4')) {
+          frameWidth = 32;
+          frameHeight = 32;
+        } else if (this.mainPlayerAvatarUrl.includes('avatar-5')) {
+          frameWidth = 48;
+          frameHeight = 48;
+        }
+
+        this.load.spritesheet(this.mainPlayerAvatarKey, this.mainPlayerAvatarUrl, {
+          frameWidth,
+          frameHeight,
+        });
+      }
+    }
+  }
+
+  create() {
+    // Initialize the group for other players
+    this.otherPlayersGroup = this.physics.add.group({
+      immovable: true,
+      allowGravity: false,
+    });
+
+    // Determine tilemap key (interview-room uses its own key; others including custom maps use 'map')
+    let tilemapKey = 'map';
+    if (this.mapId === 'interview-room') tilemapKey = 'interview-room';
+    
+    // For custom maps, the preload function loads the JSON as 'map' key in `load.tilemapTiledJSON('map', data)`
+    const map = this.make.tilemap({ key: tilemapKey });
+
+    // For interview-room, Tiled tileset names differ from Phaser cache keys (m3_ prefix)
+    // Build a lookup: tilesetName -> cacheKey
+    const m3TilesetKeyMap: Record<string, string> = {
+      'VictorianWallConsolidationGreytop': 'm3_VictorianWallConsolidationGreytop',
+      'Little_Bits_Office_Floors': 'm3_Little_Bits_Office_Floors',
+      'table_fancy_3x3_mediumwood': 'm3_table_fancy_3x3_mediumwood',
+      'EamesChair': 'm3_EamesChair',
+      'Chair_set': 'm3_Chair_set',
+      'chair_neonoir': 'm3_chair_neonoir',
+      'laptop': 'm3_laptop',
+      'papers': 'm3_papers',
+      'water_bottle': 'm3_water_bottle',
+      'solo cup': 'm3_solo_cup',
+      'office_filecabinets': 'm3_office_filecabinets',
+      'cat-tail_willow_red': 'm3_cat-tail_willow_red',
+      'table_coffee': 'm3_table_coffee',
+      'books stack [1x2]': 'm3_books_stack',
+      'book [1x1]': 'm3_book',
+      'document sepia [1x1]': 'm3_document_sepia',
+      'succulent_blue [1x1]': 'm3_succulent_blue',
+      'water_cooler': 'm3_water_cooler',
+      'trashcan_w_lid': 'm3_trashcan_w_lid',
+      'wallclock_white': 'm3_wallclock_white',
+      'globe_blue_0': 'm3_globe_blue_0',
+      'poster_7 [3x2]': 'm3_poster_7',
+      'dresser_wood_left [1x2]': 'm3_dresser_wood_left',
+      'plant_spiky [1x2]': 'm3_plant_spiky',
+      'file pdf [1x1]': 'm3_file_pdf',
+      'quill': 'm3_quill',
+      'shelf_ikea_v2': 'm3_shelf_ikea_v2',
+      'cabinet_corner_darkwood_left': 'm3_cabinet_corner_darkwood_left',
+      'whiteboard': 'm3_whiteboard',
+      'dresser_2x2_black_right': 'm3_dresser_2x2_black_right',
+      'cyberpunk': 'm3_cyberpunk',
+      'welcome mat [4ishx2]': 'm3_welcome_mat',
+      'Rugs[5x5]': 'm3_Rugs',
+      'banner_ox [1x2]': 'm3_banner_ox',
+    };
+
+    if (!map) {
+      console.error('No map data found for key "map"');
+      return;
+    }
+
+    console.log('Map loaded successfully');
+    console.log('Available tilesets in Tiled:', map.tilesets.map(ts => ts.name));
+    console.log('Available layers:', map.layers.map(l => l.name));
+
+    const tilesets: Phaser.Tilemaps.Tileset[] = [];
+
+    map.tilesets.forEach((tilesetData) => {
+      const tilesetName = tilesetData.name;
+      // For interview-room, use m3_ prefixed cache keys; otherwise use name directly
+      const cacheKey = this.mapId === 'interview-room'
+        ? (m3TilesetKeyMap[tilesetName] || tilesetName)
+        : tilesetName;
+      const tileset = map.addTilesetImage(tilesetName, cacheKey);
+
+      if (tileset) {
+        console.log(`Successfully loaded tileset: ${tilesetName} (key: ${cacheKey})`);
+        tilesets.push(tileset);
+      } else {
+        console.warn(`Failed to load tileset: ${tilesetName} (key: ${cacheKey})`);
+      }
+    });
+
+    if (tilesets.length === 0) {
+      console.error('No tilesets could be loaded. Check tileset names match between Tiled and preload.');
+      return;
+    }
+
+    const layers: { [key: string]: Phaser.Tilemaps.TilemapLayer | null } = {};
+
+    map.layers.forEach((layerData) => {
+      const layerName = layerData.name;
+      const layer = map.createLayer(layerName, tilesets, 0, 0);
+
+      if (layer) {
+        console.log(`Created layer: ${layerName}`);
+        layers[layerName] = layer;
+
+        // Set collision for layers that should have collision
+        // Ground layer = no collision, all other layers = collision
+        if (layerName.toLowerCase() !== 'ground') {
+          // For custom maps: Set collision on ALL tiles in non-ground layers
+          layer.setCollisionByExclusion([-1]); // Exclude empty tiles (ID -1 or 0)
+          console.log(`✅ Collision enabled for layer: ${layerName}`);
+        } else {
+          console.log(`⚪ No collision for ground layer: ${layerName}`);
+        }
+
+        // Also check tile properties for collision (legacy support)
+        layer.setCollisionByProperty({ collides: true });
+      } else {
+        console.warn(`Failed to create layer: ${layerName}`);
+      }
+    });
+
+    // Fix: Expand physics bounds to allow walking outside map
+    const borderSize = 1000;
+    this.physics.world.setBounds(-borderSize, -borderSize, map.widthInPixels + borderSize * 2, map.heightInPixels + borderSize * 2);
+    // Expand camera bounds to match the extended world
+    this.cameras.main.setBounds(-borderSize, -borderSize, map.widthInPixels + borderSize * 2, map.heightInPixels + borderSize * 2);
+
+    let spawnPointObject = null;
+    // For interview-room, the Spawn Point is in the 'Interactive Objects' layer.
+    // For map1/map2, keep the original list unchanged.
+    const objectLayerNames = this.mapId === 'interview-room'
+      ? ['Interactive Objects', 'Objects', 'objects', 'Spawn', 'spawn', 'SpawnPoints']
+      : ['Objects', 'objects', 'Spawn', 'spawn', 'SpawnPoints'];
+
+    for (const layerName of objectLayerNames) {
+      if (map.getObjectLayer(layerName)) {
+        spawnPointObject = map.findObject(layerName, (obj) =>
+          obj.name === 'Spawn Point' || obj.name === 'SpawnPoint' || obj.type === 'spawn'
+        );
+        if (spawnPointObject) break;
+      }
+    }
+
+    const spawnPoint = spawnPointObject && spawnPointObject.x && spawnPointObject.y
+      ? { x: spawnPointObject.x, y: spawnPointObject.y }
+      : { x: map.widthInPixels / 2, y: map.heightInPixels / 2 };
+
+    console.log('Spawn point:', spawnPoint);
+
+    // --- ENVIRONMENT GENERATION ---
+    // Create a pleasant background using Green.png
+    const bgWidth = map.widthInPixels + (borderSize * 2);
+    const bgHeight = map.heightInPixels + (borderSize * 2);
+
+    // 1. Grass Background
+    // Uses the 'Green' tile texture to create a seamless grass field
+    // Positioned at the center of the real map (which is the center of our extended bounds relative to 0,0)
+    // Actually, tileSprite position is its center. 
+    // The map starts at 0,0. 
+    // The center of the map is w/2, h/2.
+    // The background should be centered there.
+    const background = this.add.tileSprite(
+      map.widthInPixels / 2,
+      map.heightInPixels / 2,
+      bgWidth,
+      bgHeight,
+      'Green'
+    );
+    background.setDepth(-100); // Ensure it's behind everything
+
+    // 2. Procedural Plant Generation - DISABLED
+    // Commented out to remove plants outside map boundaries
+    /*
+    if (this.textures.exists('plant')) {
+      const plantGroup = this.add.group();
+      const density = 0.6; // Chance to spawn a plant in each grid cell
+      const gridSize = 60; // Spacing between potential plant spots
+ 
+      // Helper to spawn plant
+      const spawnPlant = (x: number, y: number) => {
+        if (Math.random() < density) {
+          const plant = this.add.image(
+            x + Phaser.Math.Between(-20, 20),
+            y + Phaser.Math.Between(-20, 20),
+            'plant'
+          );
+          // Randomize scale slightly for variety
+          const scale = 0.8 + Math.random() * 0.4;
+          plant.setScale(scale);
+          // Random rotation
+          plant.setAngle(Phaser.Math.Between(-10, 10));
+          plant.setDepth(-50); // Behind map objects but above grass
+          plantGroup.add(plant);
+        }
+      };
+ 
+      // Top Border
+      for (let x = -borderSize; x < map.widthInPixels + borderSize; x += gridSize) {
+        for (let y = -borderSize; y < 0; y += gridSize) spawnPlant(x, y);
+      }
+ 
+      // Bottom Border
+      for (let x = -borderSize; x < map.widthInPixels + borderSize; x += gridSize) {
+        for (let y = map.heightInPixels; y < map.heightInPixels + borderSize; y += gridSize) spawnPlant(x, y);
+      }
+ 
+      // Left Border
+      for (let y = 0; y < map.heightInPixels; y += gridSize) {
+        for (let x = -borderSize; x < 0; x += gridSize) spawnPlant(x, y);
+      }
+ 
+      // Right Border
+      for (let y = 0; y < map.heightInPixels; y += gridSize) {
+        for (let x = map.widthInPixels; x < map.widthInPixels + borderSize; x += gridSize) spawnPlant(x, y);
+      }
+    }
+    */
+    // ---------------------------
+
+    this.input.on('pointerdown', () => {
+      const soundManager = this.sound as Phaser.Sound.WebAudioSoundManager;
+      if (soundManager.context && soundManager.context.state === 'suspended') {
+        soundManager.context.resume();
+      }
+    });
+
+    // Create chairs from Interactive Objects layer
+    this.chairs = this.physics.add.staticGroup();
+
+    // Try to find the Interactive Objects layer
+    const interactiveLayer = map.getObjectLayer('Interactive Objects');
+
+    if (interactiveLayer) {
+      const chairObjects = interactiveLayer.objects.filter(
+        (obj) => obj.name === 'Chair'
+      );
+
+      chairObjects.forEach((chairObj) => {
+        if (chairObj.x && chairObj.y && chairObj.width && chairObj.height) {
+          const centerX = chairObj.x + chairObj.width / 2;
+          const centerY = chairObj.y + chairObj.height / 2;
+          const chairSprite = this.chairs!.create(
+            centerX,
+            centerY,
+            undefined
+          ) as Phaser.Physics.Arcade.Sprite;
+          chairSprite.setSize(chairObj.width, chairObj.height);
+          chairSprite.setVisible(false); // Invisible hitbox
+          console.log(`Chair created at (${centerX}, ${centerY})`);
+        }
+      });
+      console.log(`Total chairs created: ${chairObjects.length}`);
+
+      // Also extract CodeEditor and WhiteBoard objects
+      const interactionObjects = interactiveLayer.objects.filter(
+        (obj) => obj.name === 'CodeEditor' || obj.name === 'WhiteBoard'
+      );
+
+      this.interactiveZones = interactionObjects.map(obj => ({
+        type: obj.name as 'CodeEditor' | 'WhiteBoard',
+        x: (obj.x || 0) + (obj.width || 0) / 2,
+        y: (obj.y || 0) + (obj.height || 0) / 2,
+      }));
+
+      console.log(`Found ${this.interactiveZones.length} interactive zones (CodeEditor/WhiteBoard)`);
+
+    } else {
+      console.warn('No Interactive Objects layer found in map');
+    }
+
+    if (this.mainPlayerId) {
+      const mainPlayerData: PlayerData = {
+        id: this.mainPlayerId,
+        user_name: 'You',
+        user_avatar_url: this.mainPlayerAvatarUrl,
+      };
+
+      this.mainPlayer = new Player(
+        this,
+        spawnPoint.x,
+        spawnPoint.y,
+        this.mainPlayerAvatarKey,
+        mainPlayerData
+      );
+
+      // Add collision between main player and other players
+      this.physics.add.collider(this.mainPlayer, this.otherPlayersGroup);
+
+      this.cameras.main.startFollow(this.mainPlayer, true, 0.08, 0.08);
+      this.cameras.main.setZoom(2.5);
+
+      Object.values(layers).forEach((layer) => {
+        if (layer && this.mainPlayer) {
+          this.physics.add.collider(this.mainPlayer, layer);
+        }
+      });
+
+      // Add chair overlap detection
+      if (this.chairs && this.mainPlayer) {
+        this.physics.add.overlap(
+          this.mainPlayer,
+          this.chairs,
+          this.handleChairOverlap,
+          undefined,
+          this
+        );
+      }
+    }
+
+    if (this.input.keyboard) {
+      // Create cursor keys but tell Phaser NOT to prevent the default browser events (so we can type in Monaco!)
+      this.cursors = this.input.keyboard.createCursorKeys();
+      this.input.keyboard.removeCapture('W,S,A,D,F,SPACE,UP,DOWN,LEFT,RIGHT');
+
+      // False = do not enable event capture
+      this.wasd = this.input.keyboard.addKeys('W,S,A,D', false);
+
+      const fKey = this.input.keyboard.addKey('F', false);
+      fKey.on('down', () => {
+        // Prevent trigger if typing in code editor modal
+        if (this.isInputDisabled) return;
+
+        // If we are near an interactive zone, trigger it instead of fullscreen
+        if (this.nearestZone) {
+          console.log(`Triggering interaction: ${this.nearestZone.type}`);
+          gameEventEmitter.emit('open-interactive', this.nearestZone.type);
+          return;
+        }
+
+        if (this.scale.isFullscreen) {
+          this.scale.stopFullscreen();
+        } else {
+          this.scale.startFullscreen();
+        }
+      });
+    }
+
+    gameEventEmitter.on('space-state', (state: SpaceState) => {
+      console.log('Phaser: Received space-state', state);
+      console.log('Phaser: Main player ID:', this.mainPlayerId);
+      console.log('Phaser: Space map_id:', state.map_id, '| Current map loaded:', this.mapId);
+      console.log('Phaser: Users in state:', Object.keys(state.users));
+      console.log('Phaser: Current other players:', Array.from(this.otherPlayers.keys()));
+
+      if (state.map_id && state.map_id !== this.mapId) {
+        console.warn(`⚠️  MAP MISMATCH! Space uses map '${state.map_id}' but you loaded '${this.mapId}'. You may be on different maps!`);
+      }
+
+      for (const userId in state.users) {
+        console.log(`Phaser: Processing user ${userId}, isMainPlayer: ${userId === this.mainPlayerId}`);
+
+        if (userId !== this.mainPlayerId) {
+          const existingPlayer = this.otherPlayers.get(userId);
+
+          if (existingPlayer) {
+            // Check if avatar has changed
+            const oldAvatarUrl = existingPlayer.playerData.user_avatar_url;
+            const newAvatarUrl = state.users[userId].user_avatar_url;
+
+            if (oldAvatarUrl !== newAvatarUrl) {
+              console.log(`Phaser: User ${userId} has different avatar in space state, updating...`);
+              this.removeOtherPlayer(userId);
+              this.addOtherPlayer(state.users[userId], state.positions[userId] || { x: 0, y: 0 });
+            }
+          } else {
+            console.log(`Phaser: Adding other player ${userId}`);
+            this.addOtherPlayer(state.users[userId], state.positions[userId] || { x: 0, y: 0 });
+          }
+        }
+      }
+    });
+
+    gameEventEmitter.on('user-joined', (event: UserJoinedEvent) => {
+      console.log('Phaser: User joined event', event);
+      console.log('Phaser: Is main player?', event.user_id === this.mainPlayerId);
+      console.log('Phaser: Already exists?', this.otherPlayers.has(event.user_id));
+
+      if (event.user_id !== this.mainPlayerId) {
+        // Check if player already exists (rejoin scenario)
+        const existingPlayer = this.otherPlayers.get(event.user_id);
+
+        if (existingPlayer) {
+          // Check if avatar has changed by comparing avatar URLs
+          const oldAvatarUrl = existingPlayer.playerData.user_avatar_url;
+          const newAvatarUrl = event.user_data.user_avatar_url;
+
+          if (oldAvatarUrl !== newAvatarUrl) {
+            console.log(`Phaser: User ${event.user_id} rejoined with different avatar, updating...`);
+            // Remove old player and add with new avatar
+            this.removeOtherPlayer(event.user_id);
+            this.addOtherPlayer(event.user_data, { x: event.x, y: event.y });
+          } else {
+            console.log('Phaser: User rejoined with same avatar, skipping');
+          }
+        } else {
+          console.log('Phaser: Adding new player from user-joined event');
+          this.addOtherPlayer(event.user_data, { x: event.x, y: event.y });
+        }
+      } else if (event.user_id === this.mainPlayerId) {
+        console.log('Phaser: Ignoring user-joined for self');
+      }
+    });
+
+    gameEventEmitter.on('user-left', (event: UserLeftEvent) => {
+      console.log('Phaser: User left', event);
+      this.removeOtherPlayer(event.user_id);
+    });
+
+    gameEventEmitter.on('position-update', (update: PositionUpdate) => {
+      if (update.user_id !== this.mainPlayerId) {
+        this.updateOtherPlayerPosition(update);
+      }
+    });
+
+    // Listen for stream updates from React
+    this.game.events.on('update-streams', (streams: Map<string, MediaStream>) => {
+      this.handleStreamsUpdate(streams);
+    });
+
+    this.game.events.on('update-screen-streams', (streams: Map<string, MediaStream>) => {
+      this.handleScreenStreamsUpdate(streams);
+    });
+
+    gameEventEmitter.on('toggle-input', (isDisabled: boolean) => {
+      this.isInputDisabled = isDisabled;
+      if (isDisabled && this.mainPlayer && this.mainPlayer.body) {
+        this.mainPlayer.setVelocity(0);
+      }
+    });
+
+    console.log('GameScene: Signaling scene is ready for events');
+    gameEventEmitter.setSceneReady();
+  }
+
+  handleStreamsUpdate(streams: Map<string, MediaStream>) {
+    console.log(`🎥 GameScene: Received streams update. Count: ${streams.size}`);
+
+    // 1. Add new videos
+    streams.forEach((stream, userId) => {
+      console.log(`🎥 Processing stream for user ${userId}. Has video: ${!this.playerVideos.has(userId)}`);
+      if (!this.playerVideos.has(userId)) {
+        // Only add if we know where the player is
+        const player = this.otherPlayers.get(userId);
+        if (player) {
+          console.log(`✅ Player found for ${userId}, adding video`);
+          this.addVideoForUser(userId, stream);
+        } else {
+          console.log(`⚠️ No player found for ${userId} in otherPlayers map`);
+          console.log(`   Available players: ${Array.from(this.otherPlayers.keys()).join(', ')}`);
+        }
+      }
+    });
+
+    // 2. Remove old videos
+    this.playerVideos.forEach((_, userId) => {
+      if (!streams.has(userId)) {
+        console.log(`🗑️ Removing video for user ${userId}`);
+        this.removeVideoForUser(userId);
+      }
+    });
+  }
+
+  addVideoForUser(userId: string, stream: MediaStream) {
+    console.log(`🎬 Adding video element for user ${userId}`);
+    console.log(`   Stream tracks: ${stream.getTracks().map(t => `${t.kind}:${t.enabled}`).join(', ')}`);
+
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = true; // Mute to allow autoplay
+    video.style.width = '80px';
+    video.style.height = '60px';
+    video.style.borderRadius = '8px';
+    video.style.border = '2px solid #10b981';
+    video.style.objectFit = 'cover';
+    video.style.backgroundColor = '#000';
+    video.style.pointerEvents = 'none'; // Don't block clicks
+
+    // Force play
+    video.play().catch(err => {
+      console.warn(`⚠️ Video autoplay failed for ${userId}:`, err);
+    });
+
+    const player = this.otherPlayers.get(userId);
+    const startX = player ? player.x : 0;
+    const startY = player ? player.y - 60 : 0;
+
+    const domElement = this.add.dom(startX, startY, video);
+    domElement.setDepth(100); // Ensure video is above everything
+    this.playerVideos.set(userId, domElement);
+
+    console.log(`✅ Video element created for ${userId} at (${startX}, ${startY})`);
+  }
+
+  removeVideoForUser(userId: string) {
+    const video = this.playerVideos.get(userId);
+    if (video) {
+      video.destroy();
+      this.playerVideos.delete(userId);
+    }
+  }
+
+  handleScreenStreamsUpdate(streams: Map<string, MediaStream>) {
+    console.log(`📺 GameScene: Received screen streams update. Count: ${streams.size}`);
+
+    // 1. Add new screen videos
+    streams.forEach((stream, userId) => {
+      if (!this.screenVideos.has(userId)) {
+        const player = this.otherPlayers.get(userId);
+        if (player) {
+          console.log(`✅ Player found for screen share ${userId}`);
+          this.addScreenVideoForUser(userId, stream);
+        }
+      }
+    });
+
+    // 2. Remove old screen videos
+    this.screenVideos.forEach((_, userId) => {
+      if (!streams.has(userId)) {
+        console.log(`🗑️ Removing screen video for user ${userId}`);
+        this.removeScreenVideoForUser(userId);
+      }
+    });
+  }
+
+  addScreenVideoForUser(userId: string, stream: MediaStream) {
+    console.log(`📺 Adding screen video element for user ${userId}`);
+
+    const container = document.createElement('div');
+    container.style.position = 'relative';
+    container.style.width = '106px';
+    container.style.height = '60px';
+    container.style.backgroundColor = '#000';
+    container.style.borderRadius = '8px';
+    container.style.overflow = 'hidden';
+    container.style.border = '2px solid #6366f1'; // Indigo border
+    container.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
+    container.style.pointerEvents = 'auto'; // allow clicks inside Phaser DOM
+
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = true; // Auto-play requirement
+    video.style.width = '100%';
+    video.style.height = '100%';
+    video.style.objectFit = 'contain';
+
+    // Fullscreen button
+    const fsBtn = document.createElement('button');
+    fsBtn.innerHTML = '⛶';
+    fsBtn.style.position = 'absolute';
+    fsBtn.style.bottom = '4px';
+    fsBtn.style.right = '4px';
+    fsBtn.style.padding = '2px 6px';
+    fsBtn.style.backgroundColor = 'rgba(0,0,0,0.7)';
+    fsBtn.style.color = '#fff';
+    fsBtn.style.border = '1px solid rgba(255,255,255,0.2)';
+    fsBtn.style.borderRadius = '4px';
+    fsBtn.style.cursor = 'pointer';
+    fsBtn.style.fontSize = '12px';
+    fsBtn.style.fontWeight = 'bold';
+    fsBtn.style.backdropFilter = 'blur(4px)';
+
+    fsBtn.onmouseover = () => fsBtn.style.backgroundColor = 'rgba(0,0,0,0.9)';
+    fsBtn.onmouseout = () => fsBtn.style.backgroundColor = 'rgba(0,0,0,0.7)';
+
+    fsBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => {
+          console.error(`Error attempting to enable fullscreen: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    };
+
+    container.appendChild(video);
+    container.appendChild(fsBtn);
+
+    // Unmute button if there are audio tracks in the screen share
+    if (stream.getAudioTracks().length > 0) {
+      const unmuteBtn = document.createElement('button');
+      unmuteBtn.innerHTML = '🔇';
+      unmuteBtn.style.position = 'absolute';
+      unmuteBtn.style.bottom = '4px';
+      unmuteBtn.style.left = '4px';
+      unmuteBtn.style.padding = '2px 6px';
+      unmuteBtn.style.backgroundColor = 'rgba(0,0,0,0.7)';
+      unmuteBtn.style.color = '#fff';
+      unmuteBtn.style.border = '1px solid rgba(255,255,255,0.2)';
+      unmuteBtn.style.borderRadius = '4px';
+      unmuteBtn.style.cursor = 'pointer';
+      unmuteBtn.style.fontSize = '12px';
+      unmuteBtn.style.fontWeight = 'bold';
+      unmuteBtn.style.backdropFilter = 'blur(4px)';
+
+      unmuteBtn.onmouseover = () => unmuteBtn.style.backgroundColor = 'rgba(0,0,0,0.9)';
+      unmuteBtn.onmouseout = () => unmuteBtn.style.backgroundColor = 'rgba(0,0,0,0.7)';
+
+      unmuteBtn.onclick = (e) => {
+        e.stopPropagation();
+        video.muted = !video.muted;
+        unmuteBtn.innerHTML = video.muted ? '🔇' : '🔊';
+      };
+      container.appendChild(unmuteBtn);
+    }
+
+    // Force play
+    video.play().catch(err => {
+      console.warn(`⚠️ Screen Video autoplay failed for ${userId}:`, err);
+    });
+
+    const player = this.otherPlayers.get(userId);
+    const startX = player ? player.x : 0;
+    const startY = player ? player.y - 140 : 0; // Float higher than camera video
+
+    const domElement = this.add.dom(startX, startY, container);
+    domElement.setDepth(200); // Ensure screen share is highest priority
+    this.screenVideos.set(userId, domElement);
+  }
+
+  removeScreenVideoForUser(userId: string) {
+    const video = this.screenVideos.get(userId);
+    if (video) {
+      video.destroy();
+      this.screenVideos.delete(userId);
+    }
+  }
+
+  addOtherPlayer(playerData: PlayerData, position: { x: number; y: number }) {
+    console.log(`Adding other player: ${playerData.user_name}`);
+
+    const baseAvatarUrl = playerData.user_avatar_url || '/avatars/avatar-2.png';
+    let spritesheetUrl = '/sprites/avatar-2-spritesheet.png';
+    let avatarType = 'avatar-2';
+
+    if (baseAvatarUrl.includes('avatar-1')) {
+      spritesheetUrl = '/sprites/avatar-1-spritesheet.png';
+      avatarType = 'avatar-1';
+    } else if (baseAvatarUrl.includes('avatar-2')) {
+      spritesheetUrl = '/sprites/avatar-2-spritesheet.png';
+      avatarType = 'avatar-2';
+    } else if (baseAvatarUrl.includes('avatar-3')) {
+      spritesheetUrl = '/sprites/avatar-3-spritesheet.png';
+      avatarType = 'avatar-3';
+    } else if (baseAvatarUrl.includes('avatar-4')) {
+      spritesheetUrl = '/sprites/avatar-4-spritesheet.png';
+      avatarType = 'avatar-4';
+    } else if (baseAvatarUrl.includes('avatar-5')) {
+      spritesheetUrl = '/sprites/avatar-5-spritesheet.png';
+      avatarType = 'avatar-5';
+    }
+
+    // FIX: Include avatar type in the key to force reload if avatar changes
+    const playerAvatarKey = `avatar-key-${playerData.id}-${avatarType}`;
+    const playerAvatarUrl = spritesheetUrl;
+
+    const onAvatarLoadComplete = () => {
+      const otherPlayer = new Player(
+        this,
+        position.x,
+        position.y,
+        playerAvatarKey,
+        playerData
+      );
+      this.otherPlayers.set(playerData.id, otherPlayer);
+      this.otherPlayersGroup.add(otherPlayer);
+      otherPlayer.setImmovable(true);
+    };
+
+    if (this.textures.exists(playerAvatarKey)) {
+      onAvatarLoadComplete();
+    } else {
+      let frameWidth = 48;
+      let frameHeight = 48;
+
+      if (playerAvatarUrl.includes('avatar-4')) {
+        frameWidth = 32;
+        frameHeight = 32;
+      } else if (playerAvatarUrl.includes('avatar-5')) {
+        frameWidth = 48;
+        frameHeight = 48;
+      }
+
+      this.load.spritesheet(playerAvatarKey, playerAvatarUrl, {
+        frameWidth,
+        frameHeight,
+      });
+      this.load.once('complete', onAvatarLoadComplete);
+      this.load.start();
+    }
+  }
+
+  removeOtherPlayer(userId: string) {
+    const player = this.otherPlayers.get(userId);
+    if (player) {
+      console.log(`Removing other player: ${player.playerData.user_name}`);
+      this.otherPlayersGroup.remove(player);
+      player.destroy();
+      this.otherPlayers.delete(userId);
+      this.removeVideoForUser(userId); // Cleanup video if player leaves
+      this.removeScreenVideoForUser(userId); // Cleanup screen if player leaves
+    }
+  }
+
+  updateOtherPlayerPosition(update: PositionUpdate) {
+    const player = this.otherPlayers.get(update.user_id);
+    if (player) {
+      player.updateFromNetwork(
+        update.nx,
+        update.ny,
+        update.direction || 'down',
+        update.isMoving || false
+      );
+    }
+  }
+
+  private handleChairOverlap(player: any, chair: any) {
+    this.currentOverlappingChair = chair;
+    if (this.mainPlayer) {
+      this.mainPlayer.setNearChair(true, chair);
+    }
+  }
+
+  update(time: number, delta: number) {
+    if (!this.mainPlayer || !this.cursors || !this.wasd) {
+      return;
+    }
+
+    if (!this.isInputDisabled) {
+      this.mainPlayer.updateMovement(this.cursors, this.wasd);
+    } else {
+      this.mainPlayer.setVelocity(0);
+      // We still need to emit idle state so they don't look frozen mid-walk
+      if (this.mainPlayer.anims) {
+        this.mainPlayer.anims.stop();
+      }
+    }
+
+    // Update sit timer
+    this.mainPlayer.updateSitTimer(delta);
+
+    this.mainPlayer.update();
+
+    this.otherPlayers.forEach((player) => player.update());
+
+    // Update video and screen share positions together
+    this.otherPlayers.forEach((player, userId) => {
+      const hasCam = this.playerVideos.has(userId);
+      const hasScreen = this.screenVideos.has(userId);
+
+      if (hasCam && hasScreen) {
+        // Both active: place side-by-side
+        const camVideo = this.playerVideos.get(userId)!;
+        const screenVideo = this.screenVideos.get(userId)!;
+        camVideo.x = player.x - 45;
+        camVideo.y = player.y - 60;
+        screenVideo.x = player.x + 48; // slightly more for 16:9 width
+        screenVideo.y = player.y - 60;
+      } else if (hasCam) {
+        // Only camera
+        const camVideo = this.playerVideos.get(userId)!;
+        camVideo.x = player.x;
+        camVideo.y = player.y - 60;
+      } else if (hasScreen) {
+        // Only screen
+        const screenVideo = this.screenVideos.get(userId)!;
+        screenVideo.x = player.x;
+        screenVideo.y = player.y - 60;
+      }
+    });
+
+    // Check if player is still near the chair
+    if (!this.mainPlayer.getIsSitting() && this.currentOverlappingChair) {
+      const distance = Phaser.Math.Distance.Between(
+        this.mainPlayer.x,
+        this.mainPlayer.y,
+        this.currentOverlappingChair.x,
+        this.currentOverlappingChair.y
+      );
+
+      if (distance > 50) {
+        this.mainPlayer.setNearChair(false);
+        this.currentOverlappingChair = null;
+      }
+    }
+
+    // Interactive Zones Proximity Check
+    if (this.interactiveZones.length > 0 && !this.isInputDisabled) {
+      let closestZone = null;
+      let minDistance = 60; // Activation radius in pixels
+
+      for (const zone of this.interactiveZones) {
+        const dist = Phaser.Math.Distance.Between(this.mainPlayer.x, this.mainPlayer.y, zone.x, zone.y);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestZone = zone;
+        }
+      }
+
+      this.nearestZone = closestZone;
+    } else {
+      this.nearestZone = null;
+    }
+
+    // Emit event when the nearest interactive zone changes
+    const currentZoneType = this.nearestZone ? this.nearestZone.type : null;
+    if (currentZoneType !== this.lastNearestZoneType) {
+      this.lastNearestZoneType = currentZoneType;
+      gameEventEmitter.emit('interaction-prompt', {
+        show: !!this.nearestZone,
+        type: currentZoneType
+      });
+    }
+
+    // Always broadcast position and animation state
+    if (this.mainPlayer && this.mainPlayer.body) {
+      const { x, y } = this.mainPlayer;
+      const direction = this.mainPlayer.getLastDirection();
+      const isMoving =
+        this.mainPlayer.body.velocity.x !== 0 ||
+        this.mainPlayer.body.velocity.y !== 0;
+      gameEventEmitter.emit('player-moved', {
+        x,
+        y,
+        direction,
+        isMoving
+      });
+    }
+  }
+}
