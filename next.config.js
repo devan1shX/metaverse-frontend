@@ -44,7 +44,7 @@ const nextConfig = {
       },
     ],
     // Allow local images
-    unoptimized: process.env.NODE_ENV === 'development',
+    unoptimized: true,
   },
 }
 
