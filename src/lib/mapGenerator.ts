@@ -32,8 +32,10 @@ export interface TiledMapJSON {
   width: number;
 }
 
+import { API_BASE_URL } from "./api";
+
 // The base URL for dynamic prefabs
-const PREFAB_BASE_URL = "/maps/dynamic_maps";
+const PREFAB_BASE_URL = `${API_BASE_URL}/maps/dynamic_maps`;
 
 /**
  * Fetches a JSON prefab from the public folder.
