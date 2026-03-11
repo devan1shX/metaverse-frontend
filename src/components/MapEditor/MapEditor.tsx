@@ -9,6 +9,7 @@ import { MapData, TilesetConfig, SelectedTiles } from "@/types/MapEditor.types";
 import { downloadMapJSON, saveMapToPublic, exportToTiledJSON } from "@/utils/MapExporter";
 import { ChevronLeft, ChevronRight, Brush, Eraser, Grid, Download, Save, Play, Upload, LayoutDashboard, Undo, Redo } from "lucide-react";
 import { useHistory } from "@/hooks/useHistory";
+import { API_BASE_URL } from "@/lib/api";
 
 // Map configuration
 const TILE_SIZE = 16;
@@ -148,7 +149,7 @@ export default function MapEditor() {
         if (!user) return;
         const token = await user.getIdToken();
 
-        await fetch('http://localhost:3000/metaverse/custom-maps/thumbnail', {
+        await fetch(`${API_BASE_URL}/metaverse/custom-maps/thumbnail`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -359,7 +360,7 @@ export default function MapEditor() {
   const handleSaveToServer = async () => {
     if (!mapData) return;
     try {
-        const response = await fetch('http://localhost:3000/metaverse/maps/save', {
+        const response = await fetch(`${API_BASE_URL}/metaverse/maps/save`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -405,7 +406,7 @@ export default function MapEditor() {
       const token = await user.getIdToken();
       if (!mapData) return; // Guard
       const tiledJSON = exportToTiledJSON(mapData, mapName);
-      const mapResponse = await fetch('http://localhost:3000/metaverse/custom-maps', {
+      const mapResponse = await fetch(`${API_BASE_URL}/metaverse/custom-maps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ mapData: tiledJSON, mapName: mapName }),
@@ -421,7 +422,7 @@ export default function MapEditor() {
       // Upload Thumbnail immediately after custom map creation
       await uploadThumbnail(customMapId);
 
-      const spaceResponse = await fetch('http://localhost:3000/metaverse/spaces', {
+      const spaceResponse = await fetch(`${API_BASE_URL}/metaverse/spaces`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ 
