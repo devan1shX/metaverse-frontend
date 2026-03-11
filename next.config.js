@@ -30,6 +30,18 @@ const nextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'remote-office-metaverse.vercel.app',
+        port: '',
+        pathname: '/**',
+      },
     ],
     // Allow local images
     unoptimized: process.env.NODE_ENV === 'development',
