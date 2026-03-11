@@ -24,6 +24,12 @@ const nextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: '*.onrender.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
     // Allow local images
     unoptimized: process.env.NODE_ENV === 'development',
