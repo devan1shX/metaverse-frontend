@@ -22,6 +22,7 @@ type Step =
 import { getAuth } from "firebase/auth";
 import CreateSpaceDynamic from "@/components/CreateSpaceDynamic";
 import { generateOfficeMap } from "@/lib/mapGenerator";
+import { API_BASE_URL } from "@/lib/api";
 
 export default function CreateSpacePage() {
   const { user, loading: authLoading } = useAuth();
@@ -86,7 +87,7 @@ export default function CreateSpacePage() {
       const token = await currentUser.getIdToken();
       const mapName = `Dynamic Office (${employees} Team)`;
       
-      const mapResponse = await fetch('http://localhost:3000/metaverse/custom-maps', {
+      const mapResponse = await fetch(`${API_BASE_URL}/metaverse/custom-maps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ mapData: mapJSON, mapName: mapName }),
