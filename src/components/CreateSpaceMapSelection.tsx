@@ -158,7 +158,7 @@ export default function CreateSpaceMapSelection({
                 <div className="relative mb-3 aspect-video w-full overflow-hidden rounded-lg border border-white/8 bg-[rgba(255,255,255,0.03)] flex items-center justify-center">
                   {map.thumbnailUrl ? (
                     <Image
-                        src={map.thumbnailUrl}
+                        src={map.thumbnailUrl.startsWith('http') ? map.thumbnailUrl : `${API_BASE_URL}${map.thumbnailUrl}`}
                         alt={map.name}
                         fill
                         style={{ objectFit: 'cover' }}
