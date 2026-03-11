@@ -6,6 +6,7 @@ import { ArrowRight, Map } from "lucide-react";
 import { motion } from "framer-motion";
 import { getAuth } from "firebase/auth";
 import { useToast } from "@/contexts/ToastContext";
+import { API_BASE_URL } from "@/lib/api";
 
 interface CreateSpaceMapSelectionProps {
   selectedUseCase: string; 
@@ -74,7 +75,7 @@ export default function CreateSpaceMapSelection({
       }
 
       const token = await user.getIdToken();
-      const response = await fetch('http://localhost:3000/metaverse/custom-maps/my-maps', {
+      const response = await fetch(`${API_BASE_URL}/metaverse/custom-maps/my-maps`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
